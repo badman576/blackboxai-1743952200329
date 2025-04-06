@@ -1,0 +1,11 @@
+Flask==3.0.0
+Flask-SocketIO==5.3.6
+python-socketio==5.8.0
+python-engineio==4.5.1
+SpeechRecognition==3.10.0
+pyautogui==0.9.53
+psutil==5.9.5
+pyjokes==0.6.0
+pywhatkit==5.4
+requests==2.32.0
+pyperclip==1.8.2
