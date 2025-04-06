@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-4xl">
+    <header class="flex justify-between items-center mb-8">
+        <div class="flex items-center space-x-4">
+        <div id="3d-avatar-container" class="w-16 h-16"></div>
+        <script type="module" src="/static/js/3d_avatar.js"></script>
+            <div>
+                <h1 class="text-3xl font-bold text-primary-light dark:text-primary-dark">NeuroFusion AI</h1>
+                <p class="text-gray-600 dark:text-gray-400">Your intelligent voice assistant</p>
+            </div>
+        </div>
+        <div class="flex space-x-4">
+            <a href="/settings" class="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
+                <i class="fas fa-cog"></i> Settings
+            </a>
+        </div>
+    </header>
+
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+        <div id="chat-container" class="h-96 overflow-y-auto p-4 space-y-4">
+            <!-- Chat messages will appear here -->
+            <div class="text-center text-gray-500 dark:text-gray-400 py-8">
+                <i class="fas fa-microphone-alt text-4xl mb-2"></i>
+                <p>Say "Neuro" followed by your command</p>
+            </div>
+        </div>
+
+        <div class="border-t border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-700">
+            <div class="flex space-x-2">
+                <input 
+                    type="text" 
+                    id="command-input" 
+                    placeholder="Type your command or click the mic..."
+                    class="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-light dark:focus:ring-primary-dark"
+                >
+                <button 
+                    id="voice-btn"
+                    class="px-4 py-2 rounded-lg bg-secondary-light dark:bg-secondary-dark text-white hover:bg-opacity-90 transition-colors"
+                >
+                    <i class="fas fa-microphone"></i>
+                </button>
+                <button 
+                    id="send-btn"
+                    class="px-4 py-2 rounded-lg bg-primary-light dark:bg-primary-dark text-white hover:bg-opacity-90 transition-colors"
+                >
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+            <h3 class="font-semibold mb-2">Quick Commands</h3>
+            <div class="space-y-2">
+                <button class="quick-command w-full text-left px-3 py-2 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600">Open browser</button>
+                <button class="quick-command w-full text-left px-3 py-2 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600">Weather today</button>
+                <button class="quick-command w-full text-left px-3 py-2 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600">Tell me a joke</button>
+            </div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+            <h3 class="font-semibold mb-2">System Info</h3>
+            <div id="system-info" class="text-sm">
+                <!-- System info will be loaded here -->
+            </div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+            <h3 class="font-semibold mb-2">Recent Commands</h3>
+            <div id="command-history" class="text-sm space-y-1">
+                <!-- Command history will appear here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const socket = io();
+    
+    // Handle sending commands
+    document.getElementById('send-btn').addEventListener('click', sendCommand);
+    document.getElementById('command-input').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') sendCommand();
+    });
+    
+    // Handle quick commands
+    document.querySelectorAll('.quick-command').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.getElementById('command-input').value = this.textContent;
+            sendCommand();
+        });
+    });
+    
+    // Handle voice input
+    document.getElementById('voice-btn').addEventListener('click', startVoiceInput);
+    
+    // Socket.io listeners
+    socket.on('command_response', function(data) {
+        addMessage(data.command, data.response);
+    });
+    
+    function sendCommand() {
+        const input = document.getElementById('command-input');
+        const command = input.value.trim();
+        if (!command) return;
+        
+        const sendBtn = document.getElementById('send-btn');
+        const voiceBtn = document.getElementById('voice-btn');
+        
+        // Disable buttons during processing
+        sendBtn.disabled = true;
+        voiceBtn.disabled = true;
+        sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        
+        // Add loading message
+        const loadingId = 'msg-' + Date.now();
+        addMessage(command, `
+            <div id="${loadingId}" class="flex items-center space-x-2">
+                <i class="fas fa-spinner fa-spin"></i>
+                <span>Processing your request...</span>
+            </div>
+        `);
+        input.value = '';
+        
+        // Set timeout for response
+        const timeout = setTimeout(() => {
+            updateMessage(loadingId, `
+                <div class="flex items-center space-x-2 text-yellow-600 dark:text-yellow-400">
+                    <i class="fas fa-clock"></i>
+                    <span>This is taking longer than usual...</span>
+                </div>
+            `);
+        }, 5000);
+        
+        // Handle response
+        const responseHandler = function(data) {
+            clearTimeout(timeout);
+            sendBtn.disabled = false;
+            voiceBtn.disabled = false;
+            sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i>';
+            updateMessage(loadingId, data.response);
+            socket.off('command_response', responseHandler);
+            socket.off('error', errorHandler);
+        };
+        
+        // Handle errors
+        const errorHandler = function(err) {
+            clearTimeout(timeout);
+            sendBtn.disabled = false;
+            voiceBtn.disabled = false;
+            sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i>';
+            updateMessage(loadingId, `
+                <div class="flex items-center space-x-2 text-red-600 dark:text-red-400">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>Error processing request. Please try again.</span>
+                </div>
+            `);
+            console.error('Error:', err);
+            socket.off('command_response', responseHandler);
+            socket.off('error', errorHandler);
+        };
+        
+        socket.once('command_response', responseHandler);
+        socket.once('error', errorHandler);
+        socket.emit('user_command', { command: command });
+    }
+    
+    function updateMessage(id, newContent) {
+        const msg = document.getElementById(id);
+        if (msg) msg.innerHTML = newContent;
+        document.getElementById('chat-container').scrollTop = document.getElementById('chat-container').scrollHeight;
+    }
+    
+    function addMessage(command, response) {
+        const chatContainer = document.getElementById('chat-container');
+        
+        // Add user message
+        const userMsg = document.createElement('div');
+        userMsg.className = 'flex justify-end';
+        userMsg.innerHTML = `
+            <div class="max-w-xs md:max-w-md bg-primary-light dark:bg-primary-dark text-white rounded-lg p-3">
+                ${command}
+            </div>
+        `;
+        chatContainer.appendChild(userMsg);
+        
+        // Add AI response
+        const aiMsg = document.createElement('div');
+        aiMsg.className = 'flex justify-start';
+        aiMsg.innerHTML = `
+            <div class="max-w-xs md:max-w-md bg-gray-200 dark:bg-gray-700 rounded-lg p-3">
+                ${response}
+            </div>
+        `;
+        chatContainer.appendChild(aiMsg);
+        
+        // Scroll to bottom
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+    
+    function startVoiceInput() {
+        // Voice recognition implementation will go here
+        alert('Voice input feature will be implemented in the next step');
+    }
+    
+    // Load initial system info
+    fetch('/api/command', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ command: 'system info' })
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById('system-info').textContent = data.response;
+    });
+});
+</script>
+{% endblock %}
